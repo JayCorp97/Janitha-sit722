@@ -1,14 +1,12 @@
-name: Deploy to Staging Environment
+name: Deploy to Production Environment
 
 on:
-  workflow_run:
-    workflows: ["CI Pipeline - Test, Build, and Push"]
-    types:
-      - completed
+  push:
+    branches:
+      - main
 
 jobs:
-  deploy_staging:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+  deploy_production:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,7 +18,7 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Set Kubernetes context to staging AKS cluster
+    - name: Set Kubernetes context to production AKS cluster
       run: |
         az aks get-credentials --resource-group bajj-sit722-rg --name bajjsit722aks --overwrite-existing
 
@@ -36,19 +34,3 @@ jobs:
         kubectl apply -f k8s/service.yaml
         kubectl apply -f k8s/deployment.yaml
         kubectl apply -f k8s/ingress.yaml
-
-    - name: Wait for deployment rollout
-      run: |
-        kubectl rollout status deployment/customer-service
-        kubectl rollout status deployment/order-service
-        kubectl rollout status deployment/product-service
-        kubectl rollout status deployment/frontend
-
-    - name: Run simple acceptance test on staging environment
-      run: |
-        sleep 30
-        curl -f http://<your-staging-url> || exit 1
-
-    - name: Delete staging resource group
-      run: |
-        az group delete --name bajj-sit722-rg --yes --no-wait
