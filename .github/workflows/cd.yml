@@ -1,4 +1,4 @@
-name: CD Pipeline SIT722
+name: CD Pipeline SIT722 Deployment
 
 on:
   workflow_run:
