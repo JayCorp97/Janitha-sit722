@@ -14,12 +14,22 @@ spec:
     spec:
       containers:
         - name: product-service
-          image: bajjsit722acr.azurecr.io/product_service:latest
+          image: ${ACR_LOGIN_SERVER}/product_service:${GITHUB_SHA}
           ports:
-            - containerPort: 8002
+            - containerPort: 5000
           env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: product-secrets
-                  key: database-url
+            - name: ENV
+              value: "production"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+spec:
+  selector:
+    app: product-service
+  ports:
+    - protocol: TCP
+      port: 5003
+      targetPort: 5000
+  type: ClusterIP

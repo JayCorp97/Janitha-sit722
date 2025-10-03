@@ -1,52 +1,112 @@
-version: '3.8'
+version: "3.8"
 
 services:
-  postgres:
-    image: postgres:14
+  # --- Product Service Database ---
+  product_db:
+    image: postgres:15-alpine
+    container_name: product_db_container
+    restart: always
     environment:
+      POSTGRES_DB: products
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: customers
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - product_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d products"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  customer_service:
-    build: ./backend/customer_service
-    depends_on:
-      - postgres
+  # --- Order Service Database ---
+  order_db:
+    image: postgres:15-alpine
+    container_name: order_db_container
+    restart: always
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/customers
+      POSTGRES_DB: orders
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"  # Note: external port 5433 to avoid conflict with product_db
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Product Microservice (FastAPI) ---
+  product_service:
+    build:
+      context: ./backend/product_service
+      dockerfile: Dockerfile
+    image: product_service_image:latest
+    container_name: product_service_container
+    restart: always
     ports:
       - "8000:8000"
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    environment:
+      POSTGRES_HOST: product_db
+      POSTGRES_DB: products
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      AZURE_STORAGE_ACCOUNT_NAME: dummyaccount
+      AZURE_STORAGE_ACCOUNT_KEY: dummykey
+      AZURE_STORAGE_CONTAINER_NAME: dummycontainer
+      AZURE_SAS_TOKEN_EXPIRY_HOURS: 24
+    depends_on:
+      product_db:
+        condition: service_healthy
     volumes:
-      - ./backend/customer_service:/app
+      - ./backend/product_service/app:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
+  # --- Order Microservice (FastAPI) ---
   order_service:
-    build: ./backend/order_service
-    depends_on:
-      - postgres
-    environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/orders
+    build:
+      context: ./backend/order_service
+      dockerfile: Dockerfile
+    image: order_service_image:latest
+    container_name: order_service_container
+    restart: always
     ports:
-      - "8001:8001"
-    command: uvicorn main:app --host 0.0.0.0 --port 8001
-    volumes:
-      - ./backend/order_service:/app
-
-  product_service:
-    build: ./backend/product_service
-    depends_on:
-      - postgres
+      - "8001:8000"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/products
-    ports:
-      - "8002:8002"
-    command: uvicorn main:app --host 0.0.0.0 --port 8002
+      POSTGRES_HOST: order_db
+      POSTGRES_DB: orders
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PRODUCT_SERVICE_URL: http://product_service:8000
+    depends_on:
+      order_db:
+        condition: service_healthy
+      product_service:
+        condition: service_started
     volumes:
-      - ./backend/product_service:/app
+      - ./backend/order_service/app:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
+  # --- Optional Frontend (Static HTML via Nginx) ---
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: frontend_image:latest
+    container_name: frontend_container
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - product_service
+      - order_service
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+
+# --- Volumes for PostgreSQL persistence ---
+volumes:
+  product_db_data:
+  order_db_data:

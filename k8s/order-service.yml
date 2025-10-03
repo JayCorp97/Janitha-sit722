@@ -14,12 +14,22 @@ spec:
     spec:
       containers:
         - name: order-service
-          image: bajjsit722acr.azurecr.io/order_service:latest
+          image: ${ACR_LOGIN_SERVER}/order_service:${GITHUB_SHA}
           ports:
-            - containerPort: 8001
+            - containerPort: 5000
           env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: order-secrets
-                  key: database-url
+            - name: ENV
+              value: "production"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  selector:
+    app: order-service
+  ports:
+    - protocol: TCP
+      port: 5002
+      targetPort: 5000
+  type: ClusterIP
